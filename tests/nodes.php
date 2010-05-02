@@ -1,5 +1,9 @@
 <?php
 
+require_once(dirname(__FILE__).'/simpletest/autorun.php');
+require_once(dirname(__FILE__).'/db.php');
+require_once(dirname(__FILE__).'/../lib/octopi.php');
+
 class TestOfNodes extends DatabaseTestCase
 {
 	public function testNodeCreation()

@@ -7,7 +7,7 @@ class Octopi_Graph
 	public function __construct($pdo)
 	{
 		$this->_db = new Octopi_Db($pdo);
-		$this->_index = new Octopi_Index($this->db);
+		$this->_index = new Octopi_Index($this->_db);
 	}
 
 	public function node($id)
@@ -15,10 +15,10 @@ class Octopi_Graph
 		return new Octopi_Node($this->_db, $id);
 	}
 
-	public function createNode($data=array())
+	public function createNode($data=array(), $id=null)
 	{
 		$json = empty($data) ? "{}" : json_encode($data);
-		$result = $this->_db->execute("INSERT INTO node VALUES (NULL, ?)",$json);
+		$result = $this->_db->execute("INSERT INTO node VALUES (?, ?)",$id, $json);
 		return $this->node($this->_db->lastInsertId());
 	}
 
@@ -27,13 +27,34 @@ class Octopi_Graph
 		$builder = new Octopi_SqlBuilder($this->_db);
 		$select = array($traversal->start->id);
 
+		// choose the lhs and rhs based on traversal type
+		if($traversal->direction == Octopi_Edge::EITHER ||
+			$traversal->direction == Octopi_Edge::OUT)
+		{
+			$lhs = "inid";
+			$rhs = "outid";
+		}
+		else
+		{
+			$lhs = "outid";
+			$rhs = "inid";
+		}
+
 		// build the depth joins on the adjacency list
 		for($i=1; $i<=$traversal->depth; $i++)
 		{
-			$select[] = sprintf("e%d.inid n%d", $i, $i);
+			// uni-directional traversals don't use inferred edges
+			$inferred = $traversal->direction != Octopi_Edge::EITHER ?
+				sprintf("and e%d.inferred=0", $i+1) : '';
+			$previous = array($traversal->start->id);
+
+			foreach(range(1,$i) as $int)
+				$previous[] = sprintf("e%d.%s", $int, $lhs);
+
+			$select[] = sprintf("e%d.%s n%d", $i, $lhs, $i);
 			$builder->leftJoin(sprintf(
-				"edge e%d ON e%d.inid=e%d.outid",
-				$i+1, $i, $i+1
+				"edge e%d ON e%d.%s=e%d.%s and e%d.%s not in (%s) %s",
+				$i+1, $i, $lhs, $i+1, $rhs, $i+1, $lhs, implode(',',$previous), $inferred
 				));
 		}
 
@@ -41,8 +62,11 @@ class Octopi_Graph
 		$builder
 			->select(implode(', ', $select))
 			->from('edge e1')
-			->where('e1.outid=?', array($traversal->start->id))
+			->andWhere("e1.$rhs=?", array($traversal->start->id))
 			;
+
+		if($traversal->direction != Octopi_Edge::EITHER)
+			$builder->andWhere("e1.inferred=0");
 
 		return new Octopi_TraversalResult($this->_db, $builder->execute());
 	}
@@ -68,6 +92,18 @@ class Octopi_Graph
 		return $select->fetchAll(PDO::FETCH_COLUMN);
 	}
 	*/
+
+	public function __get($key)
+	{
+		if(preg_match('/^n(\d+)$/i', $key, $m))
+		{
+			return $this->node($m[1]);
+		}
+		else
+		{
+			throw new Exception("No property called $key");
+		}
+	}
 }
 
 class Octopi_Db
@@ -132,7 +168,7 @@ class Octopi_SqlBuilder
 
 	public function orWhere($sql, $params=array())
 	{
-		$this->_fragments->where[] = 'AND ('.$this->bind($sql, $params).')';
+		$this->_fragments->where[] = 'OR ('.$this->bind($sql, $params).')';
 		return $this;
 	}
 
@@ -163,10 +199,10 @@ class Octopi_SqlBuilder
 	public function build()
 	{
 		return sprintf(
-			'SELECT %s FROM %s %s WHERE %s',
+			"SELECT %s\nFROM %s\n%sWHERE %s",
 			$this->_fragments->select,
 			$this->_fragments->from,
-			implode(' ', $this->_fragments->joins),
+			$this->_fragments->joins ? implode("\n", $this->_fragments->joins)."\n" : "",
 			ltrim(implode(' ', $this->_fragments->where), 'ANDOR ')
 			);
 	}
@@ -207,7 +243,11 @@ class Octopi_Node
 
 	public function createEdge($node, $type=null, $data=array())
 	{
-		$this->_db->execute("INSERT INTO edge VALUES (NULL, ?, ?, ?)",
+		// create an inferred edge in the reverse to allow bi-directional search
+		$this->_db->execute("INSERT INTO edge VALUES (NULL, ?, ?, ?, 1)",
+			$node->id, $this->id, $type);
+
+		$this->_db->execute("INSERT INTO edge VALUES (NULL, ?, ?, ?, 0)",
 			$this->id, $node->id, $type);
 
 		$edge = new Octopi_Edge(
@@ -231,15 +271,32 @@ class Octopi_Node
 	{
 		$edges = array();
 		$builder = new Octopi_SqlBuilder($this->_db);
-		$builder->select('*')->from('edge');
+		$builder->select('*')->from('edge')->where('inferred=0');
 
 		// add conditional edges
-		if($dir & Octopi_Edge::OUT) $builder->andWhere('outid=?', array($this->id));
-		if($dir & Octopi_Edge::IN) $builder->andWhere('inid=?', array($this->id));
+		if($dir == Octopi_Edge::OUT)
+			$builder->andWhere('outid=?', array($this->id));
+		else if($dir == Octopi_Edge::IN)
+			$builder->andWhere('inid=?', array($this->id));
+		else
+			$builder->andWhere('outid=? or inid=?', array($this->id, $this->id));
 
 		$edges = array();
 		foreach($builder->execute()->fetchAll(PDO::FETCH_OBJ) as $obj)
 			$edges[] = Octopi_Edge::fromRow($this->_db, $obj);
+
+		return $edges;
+	}
+
+	public function edgesBetween($node)
+	{
+		$edges = array();
+
+		foreach($this->edges() as $edge)
+		{
+			if($edge->out == $node || $edge->in == $node)
+				$edges[] = $edge;
+		}
 
 		return $edges;
 	}
@@ -316,10 +373,9 @@ class Octopi_TraversalResult
 	{
 		while($row = $result->fetch(PDO::FETCH_OBJ))
 		{
-			$path = array_filter(array_values((array) $row));
-			$nodes = array();
+			$path = array();
 
-			foreach($path as $id)
+			foreach(array_filter(array_values((array) $row)) as $id)
 			{
 				$node = new Octopi_Node($db, $id);
 				$path[] = $node;
@@ -338,6 +394,11 @@ class Octopi_TraversalResult
 	public function nodes()
 	{
 		return $this->_nodes;
+	}
+
+	public function paths()
+	{
+		return $this->_paths;
 	}
 }
 

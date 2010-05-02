@@ -15,11 +15,12 @@ CREATE TABLE edge (
 	`outid` INT NOT NULL,
 	`inid` INT NOT NULL,
 	`type` CHAR(64),
+	`inferred` TINYINT DEFAULT '0',
 	PRIMARY KEY (edgeid)
 );
 
-CREATE INDEX out_index USING BTREE ON edge (`out`);
-CREATE INDEX in_index USING BTREE ON edge (`in`);
+CREATE INDEX out_index USING BTREE ON edge (`outid`);
+CREATE INDEX in_index USING BTREE ON edge (`inid`);
 
 DROP TABLE IF EXISTS edgemeta;
 CREATE TABLE edgemeta (
@@ -27,12 +28,4 @@ CREATE TABLE edgemeta (
 	`json` TEXT,
 	PRIMARY KEY (edgeid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
-DROP TABLE IF EXISTS index_user;
-CREATE TABLE index_user (
-	`nodeid` INT NOT NULL,
-	`value` VARCHAR(255) NOT NULL,
-	INDEX (`value`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
 
