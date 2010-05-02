@@ -14,7 +14,7 @@ CREATE TABLE edge (
 	`edgeid` INT NOT NULL auto_increment,
 	`outid` INT NOT NULL,
 	`inid` INT NOT NULL,
-	`type` CHAR(64) NOT NULL,
+	`type` CHAR(64),
 	PRIMARY KEY (edgeid)
 );
 

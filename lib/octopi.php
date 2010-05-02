@@ -15,11 +15,36 @@ class Octopi_Graph
 		return new Octopi_Node($this->_db, $id);
 	}
 
-	public function createNode($data)
+	public function createNode($data=array())
 	{
-		$result = $this->_db
-			->execute("INSERT INTO node VALUES (NULL, ?)", json_encode($data));
+		$json = empty($data) ? "{}" : json_encode($data);
+		$result = $this->_db->execute("INSERT INTO node VALUES (NULL, ?)",$json);
 		return $this->node($this->_db->lastInsertId());
+	}
+
+	public function traverse($traversal)
+	{
+		$builder = new Octopi_SqlBuilder($this->_db);
+		$select = array($traversal->start->id);
+
+		// build the depth joins on the adjacency list
+		for($i=1; $i<=$traversal->depth; $i++)
+		{
+			$select[] = sprintf("e%d.inid n%d", $i, $i);
+			$builder->leftJoin(sprintf(
+				"edge e%d ON e%d.inid=e%d.outid",
+				$i+1, $i, $i+1
+				));
+		}
+
+		// construct the sql
+		$builder
+			->select(implode(', ', $select))
+			->from('edge e1')
+			->where('e1.outid=?', array($traversal->start->id))
+			;
+
+		return new Octopi_TraversalResult($this->_db, $builder->execute());
 	}
 
 	/*
@@ -78,6 +103,7 @@ class Octopi_SqlBuilder
 		$this->_db = $db;
 		$this->_fragments = new stdClass();
 		$this->_fragments->where = array();
+		$this->_fragments->joins = array();
 	}
 
 	public function select($fields)
@@ -92,6 +118,12 @@ class Octopi_SqlBuilder
 		return $this;
 	}
 
+	public function where($sql, $params=array())
+	{
+		$this->_fragments->where = array($this->bind($sql, $params));
+		return $this;
+	}
+
 	public function andWhere($sql, $params=array())
 	{
 		$this->_fragments->where[] = 'AND ('.$this->bind($sql, $params).')';
@@ -101,6 +133,18 @@ class Octopi_SqlBuilder
 	public function orWhere($sql, $params=array())
 	{
 		$this->_fragments->where[] = 'AND ('.$this->bind($sql, $params).')';
+		return $this;
+	}
+
+	public function innerJoin($sql, $params=array())
+	{
+		$this->_fragments->joins[] = 'INNER JOIN '.$this->bind($sql, $params);
+		return $this;
+	}
+
+	public function leftJoin($sql, $params=array())
+	{
+		$this->_fragments->joins[] = 'LEFT JOIN '.$this->bind($sql, $params);
 		return $this;
 	}
 
@@ -119,9 +163,10 @@ class Octopi_SqlBuilder
 	public function build()
 	{
 		return sprintf(
-			'SELECT %s FROM %s WHERE %s',
+			'SELECT %s FROM %s %s WHERE %s',
 			$this->_fragments->select,
 			$this->_fragments->from,
+			implode(' ', $this->_fragments->joins),
 			ltrim(implode(' ', $this->_fragments->where), 'ANDOR ')
 			);
 	}
@@ -160,7 +205,7 @@ class Octopi_Node
 			);
 	}
 
-	public function createEdge($node, $type, $data=array())
+	public function createEdge($node, $type=null, $data=array())
 	{
 		$this->_db->execute("INSERT INTO edge VALUES (NULL, ?, ?, ?)",
 			$this->id, $node->id, $type);
@@ -243,6 +288,56 @@ class Octopi_Edge
 		return new Octopi_Edge($db,
 			$row->edgeid, $row->outid, $row->inid, $row->type
 			);
+	}
+}
+
+class Octopi_Traversal
+{
+	public $start;
+	public $direction=Octopi_Edge::OUT;
+	public $depth=1;
+
+	public function __construct($params=array())
+	{
+		// TODO: validate settable properties
+		foreach($params as $key=>$value)
+		{
+			$this->$key = $value;
+		}
+	}
+}
+
+class Octopi_TraversalResult
+{
+	private $_paths = array();
+	private $_nodes = array();
+
+	public function __construct($db, $result)
+	{
+		while($row = $result->fetch(PDO::FETCH_OBJ))
+		{
+			$path = array_filter(array_values((array) $row));
+			$nodes = array();
+
+			foreach($path as $id)
+			{
+				$node = new Octopi_Node($db, $id);
+				$path[] = $node;
+				$this->_nodes[$id] = $node;
+			}
+
+			$this->_paths[] = $path;
+		}
+	}
+
+	public function count()
+	{
+		return count($this->_nodes);
+	}
+
+	public function nodes()
+	{
+		return $this->_nodes;
 	}
 }
 
