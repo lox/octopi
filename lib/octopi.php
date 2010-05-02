@@ -100,14 +100,14 @@ class Octopi_Graph
 	 */
 	public function truncate()
 	{
-		$this->_pdo->exec("TRUNCATE node");
-		$this->_pdo->exec("TRUNCATE edge");
-		$this->_pdo->exec("TRUNCATE edgemeta");
+		$this->_db->exec("TRUNCATE node");
+		$this->_db->exec("TRUNCATE edge");
+		$this->_db->exec("TRUNCATE edgemeta");
 
 		$index = new Octopi_Index($this->_db);
 		foreach($index->allIndexes() as $index)
 		{
-			$this->_pdo->exec("TRUNCATE $index->table");
+			$this->_db->exec("TRUNCATE $index->table");
 		}
 
 		return $this;
