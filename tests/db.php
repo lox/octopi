@@ -16,6 +16,11 @@ class DatabaseTestCase extends UnitTestCase
 
 	public function loadSchema()
 	{
+		foreach($this->pdo->query("SHOW TABLES") as $row)
+		{
+			$this->pdo->exec("DROP TABLE ".$row[0]);
+		}
+
 		$statements = array_filter(array_map('trim',preg_split('/;/',
 			file_get_contents(dirname(__FILE__).'/../db/schema.sql')
 			)));

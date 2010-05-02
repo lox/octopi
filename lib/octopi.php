@@ -1,20 +1,33 @@
 <?php
 
+/**
+ * Octopi - A graph database
+ * @author Lachlan Donald <lachlan@ljd.cc>
+ */
+
+/**
+ * A graph of nodes connected by edges
+ */
 class Octopi_Graph
 {
-	private $_db, $_index;
+	private $_db;
 
 	public function __construct($pdo)
 	{
 		$this->_db = new Octopi_Db($pdo);
-		$this->_index = new Octopi_Index($this->_db);
 	}
 
+	/**
+	 * @return Octopi_Node
+	 */
 	public function node($id)
 	{
 		return new Octopi_Node($this->_db, $id);
 	}
 
+	/**
+	 * @return Octopi_Node
+	 */
 	public function createNode($data=array(), $id=null)
 	{
 		$json = empty($data) ? "{}" : json_encode($data);
@@ -22,6 +35,9 @@ class Octopi_Graph
 		return $this->node($this->_db->lastInsertId());
 	}
 
+	/**
+	 * @return Octopi_TraversalResult
+	 */
 	public function traverse($traversal)
 	{
 		$builder = new Octopi_SqlBuilder($this->_db);
@@ -71,27 +87,31 @@ class Octopi_Graph
 		return new Octopi_TraversalResult($this->_db, $builder->execute());
 	}
 
-	/*
-	public function addNodeToIndex($nodeId, $key, $value)
+	/**
+	 * @return Octopi_Index
+	 */
+	public function index()
 	{
-		if(!$this->_indexExists($key)) $this->_createIndex($key);
+		return new Octopi_Index($this->_db);
+	}
 
-		$table = $this->_indexTable($key);
-		$insert = $this->_pdo->prepare("INSERT INTO `$table` VALUES (?, ?)");
-		$insert->execute(array($nodeId, $value));
+	/**
+	 * @chainable
+	 */
+	public function truncate()
+	{
+		$this->_pdo->exec("TRUNCATE node");
+		$this->_pdo->exec("TRUNCATE edge");
+		$this->_pdo->exec("TRUNCATE edgemeta");
+
+		$index = new Octopi_Index($this->_db);
+		foreach($index->allIndexes() as $index)
+		{
+			$this->_pdo->exec("TRUNCATE $index->table");
+		}
+
 		return $this;
 	}
-
-	public function queryIndex($key, $value)
-	{
-		if(!$this->_indexExists($key)) return array();
-
-		$table = $this->_indexTable($key);
-		$select = $this->_pdo->prepare("SELECT nodeid FROM `$table` WHERE value=?");
-		$select->execute(array($value));
-		return $select->fetchAll(PDO::FETCH_COLUMN);
-	}
-	*/
 
 	public function __get($key)
 	{
@@ -106,6 +126,9 @@ class Octopi_Graph
 	}
 }
 
+/**
+ * PDO wrapper, basic helpers
+ */
 class Octopi_Db
 {
 	public $pdo;
@@ -130,6 +153,9 @@ class Octopi_Db
 	}
 }
 
+/**
+ * Helper to construct sql
+ */
 class Octopi_SqlBuilder
 {
 	private $_db, $_fragments;
@@ -300,6 +326,16 @@ class Octopi_Node
 
 		return $edges;
 	}
+
+	/**
+	 * @chainable
+	 */
+	public function index($key, $value)
+	{
+		$index = new Octopi_Index($this->_db);
+		$index->addNode($this, $key, $value);
+		return $this;
+	}
 }
 
 class Octopi_Edge
@@ -404,49 +440,76 @@ class Octopi_TraversalResult
 
 class Octopi_Index
 {
-	private $_pdo;
-	private $_indexes;
+	private $_db;
+	private $_indexes=array();
 
-	public function __construct($pdo)
+	public function __construct($db)
 	{
-		$this->_pdo = $pdo;
+		$this->_db = $db;
 	}
 
-	public function truncate()
+	/**
+	 * @chainable
+	 */
+	public function addNode($node, $key, $value)
 	{
-		$this->_pdo->exec("TRUNCATE node");
-		$this->_pdo->exec("TRUNCATE edge");
-		$this->_pdo->exec("TRUNCATE edgemeta");
+		if(!$this->exists($key)) $this->create($key);
 
-		foreach($this->_allIndexes() as $index)
-		{
-			$this->_pdo->exec("TRUNCATE $index");
-		}
+		$table = $this->_indexTable($key);
+		$insert = $this->_db->execute("INSERT INTO `{$table}` VALUES (?, ?)",
+			$node->id, $value);
 
 		return $this;
 	}
 
-	public function indexExists($key)
+	/**
+	 * @return array
+	 */
+	public function query($key, $value)
 	{
-		return in_array($this->_indexTable($key), $this->_allIndexes());
+		if(!$this->exists($key)) return array();
+
+		$table = $this->_indexTable($key);
+		$nodes = array();
+		$select = $this->_db->execute("SELECT nodeid FROM `$table` WHERE value=?",$value);
+
+		foreach($select->fetchAll(PDO::FETCH_COLUMN) as $id)
+			$nodes[] = new Octopi_Node($this->_db, $id);
+
+		return $nodes;
 	}
 
-	public function createIndex($key)
+	/**
+	 * @return bool
+	 */
+	public function exists($key)
+	{
+		return in_array($this->_indexTable($key), $this->allIndexes());
+	}
+
+	/**
+	 * @chainable
+	 */
+	public function create($key)
 	{
 		$table = $this->_indexTable($key);
-		$this->_pdo->exec("CREATE TABLE $table (
+		$this->_db->execute("CREATE TABLE $table (
 			`nodeid` INT NOT NULL,
 			`value` VARCHAR(255) NOT NULL,
 			INDEX (`value`)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8");
 		$this->_indexes[] = $table;
+		return $this;
 	}
 
+	/**
+	 * @return array
+	 */
 	public function allIndexes()
 	{
-		if(!isset($this->_indexes))
+		if(empty($this->_indexes))
 		{
-			foreach($this->_pdo->query("SHOW TABLES LIKE 'index_%'") as $row)
+			foreach($this->_db->execute("SHOW TABLES LIKE 'index_%'") as $row)
 			{
 				$this->_indexes[] = $row[0];
 			}
@@ -455,6 +518,9 @@ class Octopi_Index
 		return $this->_indexes;
 	}
 
+	/**
+	 * @return string
+	 */
 	private function _indexTable($key)
 	{
 		if(!preg_match('/^[a-z0-9]+$/i',$key))
