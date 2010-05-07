@@ -38,5 +38,27 @@ class TestOfEdges extends DatabaseTestCase
 		$this->assertEqual($edges[0]->in, $alice);
 		$this->assertEqual($edges[0]->out, $bob);
 	}
+
+	public function testDegree()
+	{
+		$graph = new Octopi_Graph($this->pdo);
+		$alice = $graph->createNode(array('name'=>'alice'));
+		$bob = $graph->createNode(array('name'=>'bob'));
+		$bob->createEdge($alice, 'knows');
+		$alice->createEdge($bob, 'likes');
+
+		$this->assertEqual($alice->degree(), 2);
+		$this->assertEqual($alice->degree(Octopi_Edge::EITHER), 2);
+		$this->assertEqual($alice->degree(Octopi_Edge::OUT), 1);
+		$this->assertEqual($alice->degree(Octopi_Edge::IN), 1);
+
+		$this->assertEqual($bob->degree(), 2);
+		$this->assertEqual($bob->degree(Octopi_Edge::EITHER), 2);
+		$this->assertEqual($bob->degree(Octopi_Edge::OUT), 1);
+		$this->assertEqual($bob->degree(Octopi_Edge::IN), 1);
+
+		$this->assertEqual($alice->degree(Octopi_Edge::OUT, 'likes'), 1);
+		$this->assertEqual($alice->degree(Octopi_Edge::OUT, 'hates'), 0);
+	}
 }
 

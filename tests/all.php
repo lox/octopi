@@ -12,6 +12,7 @@ class AllTests extends TestSuite
 		$this->addFile(dirname(__FILE__).'/nodes.php');
 		$this->addFile(dirname(__FILE__).'/edges.php');
 		$this->addFile(dirname(__FILE__).'/traversal.php');
+		$this->addFile(dirname(__FILE__).'/indexes.php');
 	}
 }
 

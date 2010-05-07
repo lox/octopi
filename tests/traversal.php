@@ -39,6 +39,25 @@ class TestOfTraversal extends DatabaseTestCase
 		return $this->graph;
 	}
 
+	public function testIteratorTraversal()
+	{
+		// 1 -> 2 -> 6
+
+		$graph = $this->buildGraph(array(array(1, 2, 6)));
+		$result = $graph->traverse(new Octopi_Traversal(array(
+			'start'=>$graph->n1,
+			'depth'=>2,
+			'direction'=>Octopi_Edge::OUT,
+			)));
+
+		$paths = array();
+		foreach($result as $row) $paths[] = $row;
+
+		$this->assertEqual($paths, array(
+			array($graph->n1, $graph->n2, $graph->n6),
+			));
+	}
+
 	public function testOutDirectedTraversal()
 	{
 		//      + -> 6  + - > 5
@@ -53,35 +72,34 @@ class TestOfTraversal extends DatabaseTestCase
 			array(1, 2, 4)
 			));
 
-		$traversal = new Octopi_Traversal(array(
+		$result = $graph->traverse(new Octopi_Traversal(array(
 			'start'=>$graph->n1,
-			'depth'=>4,
-			'direction'=>Octopi_Edge::OUT
-			));
+			'depth'=>array(1, 4),
+			'direction'=>Octopi_Edge::OUT,
+			)));
 
-		$result = $graph->traverse($traversal);
-		$this->assertEqual($result->count(), 6);
-
-		$this->assertEqual($result->paths(), array(
+		$this->assertEqual($result->count(), 3);
+		$this->assertEqual($result->toArray(), array(
 			array($graph->n1, $graph->n2, $graph->n6),
 			array($graph->n1, $graph->n2, $graph->n3, $graph->n5),
 			array($graph->n1, $graph->n2, $graph->n4),
 			));
 
 		// nodes should come back in breadth first order
+		$this->assertEqual(count($result->nodes()), 6);
 		$this->assertEqual($result->nodes(), array(
-			1=>$graph->n1, 2=>$graph->n2, 6=>$graph->n6,
-			3=>$graph->n3, 4=>$graph->n4, 5=>$graph->n5
+			$graph->n1, $graph->n2, $graph->n6,
+			$graph->n3, $graph->n5, $graph->n4
 			));
 
 		$traversal = new Octopi_Traversal(array(
 			'start'=>$graph->n1,
-			'depth'=>4,
+			'depth'=>array(1,4),
 			'direction'=>Octopi_Edge::IN
 			));
 
 		$result = $graph->traverse($traversal);
-		$this->assertEqual($result->paths(), array());
+		$this->assertEqual($result->toArray(), array());
 	}
 
 	public function testUndirectedTraversal()
@@ -98,14 +116,14 @@ class TestOfTraversal extends DatabaseTestCase
 
 		$traversal = new Octopi_Traversal(array(
 			'start'=>$graph->n1,
-			'depth'=>4,
+			'depth'=>array(1, 4),
 			'direction'=>Octopi_Edge::EITHER
 			));
 
 		$result = $graph->traverse($traversal);
-		$this->assertEqual($result->count(), 4);
+		$this->assertEqual($result->count(), 2);
 
-		$this->assertEqual($result->paths(), array(
+		$this->assertEqual($result->toArray(), array(
 			array($graph->n1, $graph->n2, $graph->n3),
 			array($graph->n1, $graph->n2, $graph->n4),
 			));
@@ -124,23 +142,74 @@ class TestOfTraversal extends DatabaseTestCase
 
 		$traversal = new Octopi_Traversal(array(
 			'start'=>$graph->n4,
-			'depth'=>4,
+			'depth'=>2,
 			'direction'=>Octopi_Edge::IN
 			));
 
 		$result = $graph->traverse($traversal);
-		$this->assertEqual($result->paths(), array(
+		$this->assertEqual($result->toArray(), array(
 			array($graph->n4, $graph->n2, $graph->n1),
 			));
 
 		$traversal = new Octopi_Traversal(array(
 			'start'=>$graph->n4,
-			'depth'=>4,
+			'depth'=>array(1,4),
 			'direction'=>Octopi_Edge::OUT
 			));
 
 		$result = $graph->traverse($traversal);
-		$this->assertEqual($result->paths(), array());
+		$this->assertEqual($result->toArray(), array());
+	}
+
+	public function testFixedDepthTraversal()
+	{
+		//           + -> 5
+		//           |
+		// 1 -> 2 -> 3
+		//      |
+		//      |+-> 4
+
+		$graph = $this->buildGraph(array(
+			array(1, 2, 3, 5),
+			array(1, 2, 4),
+			));
+
+		$traversal = new Octopi_Traversal(array(
+			'start'=>$graph->n1,
+			'depth'=>3,
+			'direction'=>Octopi_Edge::OUT
+			));
+
+		$result = $graph->traverse($traversal);
+		$this->assertEqual($result->toArray(), array(
+			array($graph->n1, $graph->n2, $graph->n3, $graph->n5),
+			));
+	}
+
+	public function testTraversalWithAnEndNode()
+	{
+		//           + -> 5
+		//           |
+		// 1 -> 2 -> 3
+		//      |
+		//      |+-> 4
+
+		$graph = $this->buildGraph(array(
+			array(1, 2, 3, 5),
+			array(1, 2, 4),
+			));
+
+		$traversal = new Octopi_Traversal(array(
+			'start'=>$graph->n1,
+			'end'=>$graph->n4,
+			'depth'=>2,
+			'direction'=>Octopi_Edge::OUT
+			));
+
+		$result = $graph->traverse($traversal);
+		$this->assertEqual($result->toArray(), array(
+			array($graph->n1, $graph->n2, $graph->n4),
+			));
 	}
 }
 

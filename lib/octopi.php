@@ -40,9 +40,6 @@ class Octopi_Graph
 	 */
 	public function traverse($traversal)
 	{
-		$builder = new Octopi_SqlBuilder($this->_db);
-		$select = array($traversal->start->id);
-
 		// choose the lhs and rhs based on traversal type
 		if($traversal->direction == Octopi_Edge::EITHER ||
 			$traversal->direction == Octopi_Edge::OUT)
@@ -56,22 +53,46 @@ class Octopi_Graph
 			$rhs = "inid";
 		}
 
+		$builder = new Octopi_SqlBuilder($this->_db);
+		$select = array($traversal->start->id, "e1.$lhs n1");
+
+		// define a depth for traversal
+		$depth = $traversal->depth;
+		$min = is_array($depth) ? $depth[0] : $depth;
+		$max = is_array($depth) && isset($depth[1]) ? $depth[1] : $min;
+
 		// build the depth joins on the adjacency list
-		for($i=1; $i<=$traversal->depth; $i++)
+		for($i=1; $i<$max; $i++)
 		{
 			// uni-directional traversals don't use inferred edges
 			$inferred = $traversal->direction != Octopi_Edge::EITHER ?
 				sprintf("and e%d.inferred=0", $i+1) : '';
-			$previous = array($traversal->start->id);
 
+			// exclude nodes already in the path to prevent cycles
+			$exclude = array($traversal->start->id);
 			foreach(range(1,$i) as $int)
-				$previous[] = sprintf("e%d.%s", $int, $lhs);
+				$exclude[] = sprintf("e%d.%s", $int, $lhs);
 
-			$select[] = sprintf("e%d.%s n%d", $i, $lhs, $i);
-			$builder->leftJoin(sprintf(
+			$select[] = sprintf("e%d.%s n%d", $i+1, $lhs, $i+1);
+			$join = $i > $min ? 'leftJoin' : 'innerJoin';
+
+			// add either a left or inner join to traverse a node
+			$builder->$join(sprintf(
 				"edge e%d ON e%d.%s=e%d.%s and e%d.%s not in (%s) %s",
-				$i+1, $i, $lhs, $i+1, $rhs, $i+1, $lhs, implode(',',$previous), $inferred
+				$i+1, $i, $lhs, $i+1, $rhs, $i+1, $lhs, implode(',',$exclude), $inferred
 				));
+		}
+
+		// optionally include an end node as a stopping point
+		if(isset($traversal->end))
+		{
+			$coalesce = array();
+
+			foreach(range($max,1) as $int)
+				$coalesce[] = sprintf("e%d.%s", $int, $lhs);
+
+			$builder->andWhere(sprintf("COALESCE(%s) = %d",
+				implode(',', $coalesce), $traversal->end->id));
 		}
 
 		// construct the sql
@@ -84,7 +105,7 @@ class Octopi_Graph
 		if($traversal->direction != Octopi_Edge::EITHER)
 			$builder->andWhere("e1.inferred=0");
 
-		return new Octopi_TraversalResult($this->_db, $builder->execute());
+		return new Octopi_TraversalResult($builder->execute(), $this->_db);
 	}
 
 	/**
@@ -336,6 +357,40 @@ class Octopi_Node
 		$index->addNode($this, $key, $value);
 		return $this;
 	}
+
+	/**
+	 *
+	 */
+	public function degree($direction=Octopi_Edge::EITHER, $type=null)
+	{
+		$builder = new Octopi_SqlBuilder($this->_db);
+		$builder
+			->select('count(*) count')
+			->from('edge')
+			->where('inferred=0')
+			;
+
+		// build the edge selector
+		if($direction == Octopi_Edge::EITHER)
+		{
+			$builder->andWhere('outid=? or inid=?',array($this->id, $this->id));
+		}
+		else if($direction == Octopi_Edge::IN)
+		{
+			$builder->andWhere('inid=?',array($this->id));
+		}
+		else if($direction == Octopi_Edge::OUT)
+		{
+			$builder->andWhere('outid=?',array($this->id));
+		}
+
+		// add an optional type selector
+		if($type)
+			$builder->andWhere('type=?',array($type));
+
+		$result = $builder->execute()->fetchObject();
+		return $result->count;
+	}
 }
 
 class Octopi_Edge
@@ -384,11 +439,20 @@ class Octopi_Edge
 	}
 }
 
+/**
+ * Defines a traversal, the following attributes are supported:
+ *
+ * start (required) => the starting node
+ * end (optionnal) => an optional end point which all paths must have
+ * depth (default 1) => the number of traversals to perform
+ * direction (default OUT) => what direction to traverse edges
+ */
 class Octopi_Traversal
 {
 	public $start;
 	public $direction=Octopi_Edge::OUT;
 	public $depth=1;
+	public $end;
 
 	public function __construct($params=array())
 	{
@@ -400,41 +464,84 @@ class Octopi_Traversal
 	}
 }
 
-class Octopi_TraversalResult
+class Octopi_TraversalResult implements Iterator
 {
-	private $_paths = array();
-	private $_nodes = array();
+	private $_db, $_stmt, $_rows, $_cursor=-1, $_valid=true;
 
-	public function __construct($db, $result)
+	public function __construct(PDOStatement $stmt, $db)
 	{
-		while($row = $result->fetch(PDO::FETCH_OBJ))
-		{
-			$path = array();
-
-			foreach(array_filter(array_values((array) $row)) as $id)
-			{
-				$node = new Octopi_Node($db, $id);
-				$path[] = $node;
-				$this->_nodes[$id] = $node;
-			}
-
-			$this->_paths[] = $path;
-		}
+		$this->_stmt = $stmt;
+		$this->_db = $db;
 	}
 
-	public function count()
+	public function toArray()
 	{
-		return count($this->_nodes);
+		$paths = array();
+
+		foreach($this as $row)
+			$paths[] = $row;
+
+		return $paths;
 	}
 
 	public function nodes()
 	{
-		return $this->_nodes;
+		$nodes = array();
+		foreach($this as $path)
+			foreach($path as $node)
+				$nodes[$node->id] = $node;
+
+		return array_values($nodes);
 	}
 
-	public function paths()
+	public function count()
 	{
-		return $this->_paths;
+		return $this->_stmt->rowCount();
+	}
+
+	private function _hydrateCurrent()
+	{
+		$nodes = array();
+		foreach(array_filter($this->_rows[$this->_cursor]) as $nodeId)
+			$nodes[] = new Octopi_Node($this->_db, $nodeId);
+
+		return $nodes;
+	}
+
+	// ------------------------------
+	// iterator interface
+
+	public function current()
+	{
+		if(isset($this->_rows[$this->_cursor]))
+			return $this->_hydrateCurrent();
+	}
+
+	public function key()
+	{
+		return $this->_cursor;
+	}
+
+	public function next()
+	{
+		$this->_cursor++;
+
+		if(empty($this->_rows[$this->_cursor]) && $row = $this->_stmt->fetch(PDO::FETCH_NUM))
+			$this->_rows[$this->_cursor] = $row;
+
+		$this->_valid = isset($this->_rows[$this->_cursor]);
+	}
+
+	public function valid()
+	{
+		return $this->_valid;
+	}
+
+	public function rewind()
+	{
+		$this->_cursor = 0;
+		$this->_valid = true;
+		$this->next();
 	}
 }
 

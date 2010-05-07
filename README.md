@@ -31,7 +31,7 @@ $result = $graph->traverse(new Octopi_Traversal(array(
 )));
 
 // get back a list of nodes, and the paths
-// $result->paths() => array( array( $alice, $bob, $frank ) )
+// $result->toArray() => array( array( $alice, $bob, $frank ) )
 </code></pre>
 
 Performance
@@ -41,29 +41,30 @@ Some initial tests indicate that it's definately not in the same league as a ded
 graph database, but fairly servicable for collections of data where you are dealing with
 node graphs less than several million nodes.
 
-For a graph of 1,000,000 nodes with randomly generated connections to nodes previously created
+For a graph of 1,000,000 nodes with two randomly generated connection to nodes previously created
 the following basic stats were captured (MacBook Pro 2008, 2.5Ghz CoreDuo2):
 
 <pre>
 querying root node for a depth of 1
-found 22 nodes in 0.800925s
-peak memory usage: 768Kb
+found 15 nodes in 0.000800s
+peak memory usage: 512Kb
 
 querying root node for a depth of 2
-found 176 nodes in 3.952894s
-peak memory usage: 3072Kb
+found 129 nodes in 0.003341s
+peak memory usage: 1024Kb
 
 querying root node for a depth of 3
-found 875 nodes in 16.533002s
-peak memory usage: 13056Kb
+found 663 nodes in 0.022859s
+peak memory usage: 3072Kb
 
 querying root node for a depth of 4
-found 3291 nodes in 57.462405s
-peak memory usage: 46336Kb
+found 2633 nodes in 0.103763s
+peak memory usage: 13312Kb
 
 querying root node for a depth of 5
-found 9889 nodes in 130.965415s
-peak memory usage: 137472Kb
+found 7928 nodes in 0.336301s
+peak memory usage: 45312Kb
+
 </pre>
 
 Running the tests
