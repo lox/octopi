@@ -1,6 +1,6 @@
 <?php
 
-define('NODE_COUNT',100000);
+define('NODE_COUNT',1000000);
 
 require_once(dirname(__FILE__).'/../lib/octopi.php');
 
@@ -11,6 +11,7 @@ $pdo = new PDO('mysql:host=localhost;dbname=graphtest',
 );
 
 $graph = new Octopi_Graph($pdo);
+$starttime = microtime(true);
 
 if(in_array('--generate', $argv))
 {
@@ -21,8 +22,15 @@ if(in_array('--generate', $argv))
 
 	for($i=1; $i<=NODE_COUNT; $i++)
 	{
-		if($i % 100 == 0) printf("generating node %s\n", $i);
-		$node = $graph->createNode(array(), $i);
+		$elapsed = microtime(true)-$starttime;
+		$rate = $i / $elapsed;
+		$estimate = (NODE_COUNT - $i) / $rate;
+
+		if($i % 1000 == 0)
+			printf("generating node %s (%d node/sec, %d seconds left)\n",
+				$i, $rate, $estimate);
+
+		$node = $graph->addNode(array(), $i);
 
 		// pick four random nodes
 		$p1 = $graph->node(rand(1,$i-1));
@@ -31,7 +39,7 @@ if(in_array('--generate', $argv))
 		if($i>1)
 		{
 			// use the rich-get-richer method to build a natural graph
-			$node->createEdge($p1->degree() > $p2->degree() ? $p1 : $p2);
+			$node->addEdge($p1->degree() > $p2->degree() ? $p1 : $p2);
 		}
 	}
 

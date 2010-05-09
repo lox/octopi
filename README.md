@@ -41,30 +41,31 @@ Some initial tests indicate that it's definately not in the same league as a ded
 graph database, but fairly servicable for collections of data where you are dealing with
 node graphs less than several million nodes.
 
-For a graph of 1,000,000 nodes with two randomly generated connection to nodes previously created
+For a graph of 1,000,000 nodes each with a link back to a previous node
 the following basic stats were captured (MacBook Pro 2008, 2.5Ghz CoreDuo2):
 
 <pre>
+inserting 1000000 nodes took 1133.49s
+
 querying root node for a depth of 1
-found 15 nodes in 0.000800s
+found 27 paths in 0.000265s
 peak memory usage: 512Kb
 
 querying root node for a depth of 2
-found 129 nodes in 0.003341s
-peak memory usage: 1024Kb
+found 292 paths in 0.000339s
+peak memory usage: 512Kb
 
 querying root node for a depth of 3
-found 663 nodes in 0.022859s
-peak memory usage: 3072Kb
+found 1582 paths in 0.000635s
+peak memory usage: 512Kb
 
 querying root node for a depth of 4
-found 2633 nodes in 0.103763s
-peak memory usage: 13312Kb
+found 6045 paths in 0.001883s
+peak memory usage: 512Kb
 
 querying root node for a depth of 5
-found 7928 nodes in 0.336301s
-peak memory usage: 45312Kb
-
+found 17705 paths in 0.006702s
+peak memory usage: 512Kb
 </pre>
 
 Running the tests
