@@ -351,10 +351,13 @@ class Octopi_Node
 	/**
 	 * @chainable
 	 */
-	public function index($key, $value)
+	public function index($params)
 	{
 		$index = new Octopi_Index($this->_db);
-		$index->addNode($this, $key, $value);
+
+		foreach($params as $key=>$value)
+			$index->addNode($this, $key, $value);
+
 		return $this;
 	}
 
@@ -570,20 +573,57 @@ class Octopi_Index
 	}
 
 	/**
+	 * Find nodes that match all of the provided key/values.
 	 * @return array
 	 */
-	public function query($key, $value)
+	public function find($params)
 	{
-		if(!$this->exists($key)) return array();
+		$keys = array_unique(array_keys($params));
+		$tablemap = array();
 
-		$table = $this->_indexTable($key);
+		// fail fast if we can
+		foreach($keys as $key)
+			if(!$this->exists($key)) return array();
+
+		// build a list of unique tables
+		foreach($keys as $key)
+			$tablemap[$key] = $this->_indexTable($key);
+
+		$tables = array_values($tablemap);
+		$innerJoins = array();
+
+		$builder = new Octopi_SqlBuilder($this->_db);
+		$builder->select('*')->from($tables[0]);
+
+		foreach(array_slice($tables,1) as $table)
+			$innerJoins[] = sprintf("$table USING(nodeid)");
+
+		foreach($params as $key=>$value)
+			$builder->andWhere(sprintf("%s.value=?",$tablemap[$key]), array($value));
+
+		if($innerJoins)
+			$builder->innerJoin(implode("\n",$innerJoins));
+
+		$result = $builder->execute();
 		$nodes = array();
-		$select = $this->_db->execute("SELECT nodeid FROM `$table` WHERE value=?",$value);
 
-		foreach($select->fetchAll(PDO::FETCH_COLUMN) as $id)
+		foreach($result->fetchAll(PDO::FETCH_COLUMN) as $id)
 			$nodes[] = new Octopi_Node($this->_db, $id);
 
 		return $nodes;
+	}
+
+	/**
+	 * Like {@link find()} but only returns one result, or an exception
+	 */
+	public function findOne($params)
+	{
+		$results = $this->find($params);
+
+		if(count($results) == 0 || count($results) > 1)
+			throw new Exception("Found a node count other than one");
+
+		return $results[0];
 	}
 
 	/**
@@ -591,7 +631,7 @@ class Octopi_Index
 	 */
 	public function exists($key)
 	{
-		return in_array($this->_indexTable($key), $this->allIndexes());
+		return in_array($key, $this->allIndexes());
 	}
 
 	/**
@@ -618,7 +658,7 @@ class Octopi_Index
 		{
 			foreach($this->_db->execute("SHOW TABLES LIKE 'index_%'") as $row)
 			{
-				$this->_indexes[] = $row[0];
+				$this->_indexes[] = substr($row[0],6);
 			}
 		}
 
