@@ -16,7 +16,7 @@ class TestOfTraversal extends DatabaseTestCase
 	private function node($nodeId, $data=array())
 	{
 		if(!isset($this->nodes[$nodeId]))
-			$this->nodes[$nodeId] = $this->graph->createNode($data, $nodeId);
+			$this->nodes[$nodeId] = $this->graph->addNode($data, $nodeId);
 
 		return $this->nodes[$nodeId];
 	}
@@ -32,7 +32,7 @@ class TestOfTraversal extends DatabaseTestCase
 				$to = $this->node($path[$i+1]);
 
 				if(!$from->edgesBetween($to))
-					$from->createEdge($to);
+					$from->addEdge($to);
 			}
 		}
 

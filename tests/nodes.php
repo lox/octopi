@@ -9,8 +9,8 @@ class TestOfNodes extends DatabaseTestCase
 	public function testNodeCreation()
 	{
 		$graph = new Octopi_Graph($this->pdo);
-		$alice = $graph->createNode(array('name'=>'alice'));
-		$bob = $graph->createNode(array('name'=>'bob'));
+		$alice = $graph->addNode(array('name'=>'alice'));
+		$bob = $graph->addNode(array('name'=>'bob'));
 
 		$this->assertEqual($alice->id, 1);
 		$this->assertEqual($bob->id, 2);

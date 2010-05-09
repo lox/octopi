@@ -28,7 +28,7 @@ class Octopi_Graph
 	/**
 	 * @return Octopi_Node
 	 */
-	public function createNode($data=array(), $id=null)
+	public function addNode($data=array(), $id=null)
 	{
 		$json = empty($data) ? "{}" : json_encode($data);
 		$result = $this->_db->execute("INSERT INTO node VALUES (?, ?)",$id, $json);
@@ -128,7 +128,7 @@ class Octopi_Graph
 		$index = new Octopi_Index($this->_db);
 		foreach($index->allIndexes() as $index)
 		{
-			$this->_db->exec("TRUNCATE $index->table");
+			$this->_db->exec("TRUNCATE $index");
 		}
 
 		return $this;
@@ -288,7 +288,7 @@ class Octopi_Node
 			);
 	}
 
-	public function createEdge($node, $type=null, $data=array())
+	public function addEdge($node, $type=null, $data=array())
 	{
 		// create an inferred edge in the reverse to allow bi-directional search
 		$this->_db->execute("INSERT INTO edge VALUES (NULL, ?, ?, ?, 1)",

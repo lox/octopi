@@ -9,8 +9,8 @@ class TestOfIndexes extends DatabaseTestCase
 	public function testBasicIndexing()
 	{
 		$graph = new Octopi_Graph($this->pdo);
-		$alice = $graph->createNode(array('name'=>'alice'));
-		$bob = $graph->createNode(array('name'=>'bob'));
+		$alice = $graph->addNode(array('name'=>'alice'));
+		$bob = $graph->addNode(array('name'=>'bob'));
 
 		$alice->index('type', 'person');
 		$bob->index('type', 'person');
